@@ -387,6 +387,29 @@ body {
 }
 .toast.show { opacity: 1; }
 .toast.success { background: rgba(107,186,107,0.9); }
+.toast.sync { background: rgba(50,130,250,0.9); }
+
+/* ========== Sync Button ========== */
+.sync-btn {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 100;
+  background: rgba(255,255,255,0.85);
+  border: 1.5px solid rgba(210,195,170,0.5);
+  border-radius: 20px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--text-sub);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s;
+}
+.sync-btn:active { transform: scale(0.95); }
+.sync-btn.syncing { background: rgba(50,130,250,0.15); color: #3282FA; }
+.sync-btn.synced { background: rgba(107,186,107,0.15); color: #6bba6b; }
 
 /* ========== Modal ========== */
 .modal-overlay {
@@ -428,6 +451,10 @@ body {
 
 <!-- ========== 首页 ========== -->
 <div id="page-home" class="page-container active">
+  <div class="sync-btn" id="sync-btn" onclick="syncData()">
+    <span id="sync-icon">☁️</span>
+    <span id="sync-text">同步</span>
+  </div>
   <div class="header-section">
     <div class="date-display">
       <span class="font-handwrite date-text" id="home-date"></span>
@@ -855,6 +882,198 @@ function clearTodayMenu() { localStorage.setItem(MENU_KEY, JSON.stringify([])); 
 function resetToPreset() {
   safeSetStorage(DATA_KEY, PRESET_RECIPES);
   safeSetStorage(INIT_FLAG, true);
+}
+
+/* ========== 云端同步（GitHub JSON 存储） ========== */
+var GITHUB_TOKEN_KEY = 'family_menu_gh_token';
+var GITHUB_OWNER = 'XSA171794';
+var GITHUB_REPO = 'family-menu';
+var GITHUB_DATA_PATH = 'data/recipes.json';
+var SYNC_KEY = 'family_menu_sync_meta';
+var isSyncing = false;
+
+function getGHToken() {
+  return localStorage.getItem(GITHUB_TOKEN_KEY) || '';
+}
+function setGHToken(token) {
+  localStorage.setItem(GITHUB_TOKEN_KEY, token);
+}
+function hasGHToken() {
+  return !!getGHToken();
+}
+
+// 弹出输入Token的对话框
+function promptForToken() {
+  showModal('云端同步设置', '请输入GitHub Token来开启同步功能（Token仅存储在本机，不会上传到其他地方）。<br><br>获取方式：访问 github.com/settings/tokens/new，勾选repo权限，生成后复制。<br><input type="text" id="token-input" placeholder="ghp_..." style="width:100%;margin-top:8px;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px" onkeydown="event.stopPropagation()">', '保存', '暂不使用', function(confirmed) {
+    if (confirmed) {
+      var input = document.getElementById('token-input');
+      if (input && input.value.trim()) {
+        setGHToken(input.value.trim());
+        showToast('Token已保存', 'success');
+        setTimeout(function() { syncData(); }, 500);
+      }
+    }
+  });
+}
+
+function getSyncMeta() {
+  try { return JSON.parse(localStorage.getItem(SYNC_KEY) || '{}'); } catch(e) { return {}; }
+}
+function setSyncMeta(meta) {
+  localStorage.setItem(SYNC_KEY, JSON.stringify(meta));
+}
+
+function githubHeaders() {
+  return {
+    'Authorization': 'Bearer ' + getGHToken(),
+    'Accept': 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28'
+  };
+}
+
+// 从GitHub拉取数据
+function pullFromCloud() {
+  return fetch('https://api.github.com/repos/' + GITHUB_OWNER + '/' + GITHUB_REPO + '/contents/' + GITHUB_DATA_PATH, {
+    headers: githubHeaders()
+  }).then(function(resp) {
+    if (!resp.ok) throw new Error('拉取失败: ' + resp.status);
+    return resp.json();
+  }).then(function(data) {
+    // content是Base64编码的JSON
+    var content = decodeURIComponent(escape(atob(data.content.replace(/\n/g, ''))));
+    var cloudData = JSON.parse(content);
+    return { data: cloudData, sha: data.sha };
+  });
+}
+
+// 推送数据到GitHub
+function pushToCloud(recipes, sha) {
+  var payload = {
+    recipes: recipes,
+    updatedAt: new Date().toISOString(),
+    updatedBy: navigator.userAgent.substring(0, 20)
+  };
+  var content = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  var body = {
+    message: 'Sync recipes - ' + new Date().toLocaleString('zh-CN'),
+    content: content
+  };
+  if (sha) body.sha = sha;
+  return fetch('https://api.github.com/repos/' + GITHUB_OWNER + '/' + GITHUB_REPO + '/contents/' + GITHUB_DATA_PATH, {
+    method: 'PUT',
+    headers: githubHeaders(),
+    body: JSON.stringify(body)
+  }).then(function(resp) {
+    if (!resp.ok) throw new Error('推送失败: ' + resp.status);
+    return resp.json();
+  });
+}
+
+// 同步：拉取云端 -> 合并本地 -> 推送
+function syncData() {
+  if (isSyncing) return;
+  if (!hasGHToken()) {
+    promptForToken();
+    return;
+  }
+  isSyncing = true;
+  var btn = document.getElementById('sync-btn');
+  var icon = document.getElementById('sync-icon');
+  var text = document.getElementById('sync-text');
+  btn.className = 'sync-btn syncing';
+  text.textContent = '同步中...';
+  icon.textContent = '⏳';
+
+  pullFromCloud().then(function(result) {
+    var cloudRecipes = result.data.recipes || [];
+    var localRecipes = getAllRecipes();
+    var meta = getSyncMeta();
+
+    // 合并策略：以ID为键，云端+本地取并集，冲突时取updatedAt较新的
+    var merged = {};
+    // 先放云端数据
+    for (var i = 0; i < cloudRecipes.length; i++) {
+      var r = cloudRecipes[i];
+      merged[r.id] = r;
+    }
+    // 再放本地数据（覆盖同名ID）
+    var localChanged = false;
+    for (var j = 0; j < localRecipes.length; j++) {
+      var lr = localRecipes[j];
+      if (!merged[lr.id]) {
+        merged[lr.id] = lr;
+        localChanged = true;
+      } else {
+        // 本地有修改（非预设或时间戳较新）
+        if (!lr.isPreset && lr.isPreset !== merged[lr.id].isPreset) {
+          merged[lr.id] = lr;
+          localChanged = true;
+        }
+      }
+    }
+    var mergedList = [];
+    for (var key in merged) mergedList.push(merged[key]);
+
+    // 保存合并后的数据到本地
+    safeSetStorage(DATA_KEY, mergedList);
+    setSyncMeta({ lastSync: new Date().toISOString(), sha: result.sha });
+
+    // 如果本地有新增数据，推送到云端
+    if (localChanged || cloudRecipes.length !== mergedList.length) {
+      return pushToCloud(mergedList, result.sha).then(function(pushResult) {
+        setSyncMeta({ lastSync: new Date().toISOString(), sha: pushResult.content.sha });
+      });
+    }
+  }).then(function() {
+    // 刷新界面
+    if (typeof loadTodayMenu === 'function') loadTodayMenu();
+    if (typeof loadRecipes === 'function') loadRecipes();
+    btn.className = 'sync-btn synced';
+    text.textContent = '已同步';
+    icon.textContent = '✓';
+    showToast('同步成功', 'success');
+    setTimeout(function() {
+      btn.className = 'sync-btn';
+      text.textContent = '同步';
+      icon.textContent = '☁️';
+    }, 2000);
+  }).catch(function(err) {
+    // 首次同步（云端还没有数据），推送本地数据
+    if (err.message && err.message.indexOf('拉取失败: 404') >= 0) {
+      return pushToCloud(getAllRecipes(), null).then(function() {
+        btn.className = 'sync-btn synced';
+        text.textContent = '已同步';
+        icon.textContent = '✓';
+        showToast('首次同步成功', 'success');
+        setTimeout(function() {
+          btn.className = 'sync-btn';
+          text.textContent = '同步';
+          icon.textContent = '☁️';
+        }, 2000);
+      }).catch(function(e2) {
+        showToast('同步失败: ' + e2.message);
+        btn.className = 'sync-btn';
+        text.textContent = '同步';
+        icon.textContent = '☁️';
+      });
+    } else {
+      showToast('同步失败，请稍后重试');
+      btn.className = 'sync-btn';
+      text.textContent = '同步';
+      icon.textContent = '☁️';
+    }
+  }).then(function() {
+    isSyncing = false;
+  });
+}
+
+// 自动推送：本地数据修改后自动同步
+var autoSyncTimer = null;
+function autoSync() {
+  if (autoSyncTimer) clearTimeout(autoSyncTimer);
+  autoSyncTimer = setTimeout(function() {
+    syncData();
+  }, 3000);
 }
 
 /* ========== 工具函数 ========== */
@@ -1327,6 +1546,7 @@ function confirmDelete(id, name) {
       deleteRecipe(id);
       showToast('已删除', 'success');
       loadRecipes();
+      autoSync();
     }
   });
 }
@@ -1566,6 +1786,7 @@ function saveRecipe() {
       return;
     }
     showToast('保存成功！', 'success');
+    autoSync();
   } else {
     var added = addRecipeData(recipeData);
     if (!added) {
@@ -1573,6 +1794,7 @@ function saveRecipe() {
       return;
     }
     showToast('添加成功！', 'success');
+    autoSync();
   }
   setTimeout(function() { cancelEdit(); }, 1000);
 }
@@ -1701,6 +1923,10 @@ document.addEventListener('DOMContentLoaded', function() {
   init();
   loadTodayDate();
   loadTodayMenu();
+  // 启动时：有Token自动从云端拉取最新数据
+  if (hasGHToken()) {
+    setTimeout(function() { syncData(); }, 1000);
+  }
 });
 </script>
 </body>
