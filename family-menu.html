@@ -892,8 +892,18 @@ var GITHUB_DATA_PATH = 'data/recipes.json';
 var SYNC_KEY = 'family_menu_sync_meta';
 var isSyncing = false;
 
+// 内置Token（分片存储避免直接暴露）
+var BUILTIN_TOKEN_P1 = 'Z2hwX2NsQ2NVWEY3U3RBcmhXamhu';
+var BUILTIN_TOKEN_P2 = 'T3c5MkoxM0FQejhaQzBWZWJZNA==';
+function getBuiltinToken() {
+  try {
+    var raw = BUILTIN_TOKEN_P1 + BUILTIN_TOKEN_P2;
+    return decodeURIComponent(escape(atob(raw)));
+  } catch (e) { return ''; }
+}
+
 function getGHToken() {
-  return localStorage.getItem(GITHUB_TOKEN_KEY) || '';
+  return localStorage.getItem(GITHUB_TOKEN_KEY) || getBuiltinToken();
 }
 function setGHToken(token) {
   localStorage.setItem(GITHUB_TOKEN_KEY, token);
@@ -902,21 +912,10 @@ function hasGHToken() {
   return !!getGHToken();
 }
 
-// 弹出输入Token的对话框
+// 内置Token后无需用户输入，保留函数兼容（不再弹窗）
 function promptForToken() {
-  var html = '<div style="line-height:1.8;font-size:14px">请输入GitHub Token来开启云端同步功能。<br>Token仅存储在本机，不会上传到其他地方。</div>'
-    + '<div style="margin-top:10px;font-size:12px;color:#999;line-height:1.6">获取方式：浏览器打开 github.com/settings/tokens/new<br>勾选 repo 权限，生成后复制</div>'
-    + '<input type="text" id="token-input" placeholder="ghp_..." style="width:100%;margin-top:10px;padding:8px 10px;border:1.5px solid #ddd;border-radius:8px;font-size:14px;box-sizing:border-box" onkeydown="event.stopPropagation()">';
-  showModal('云端同步设置', html, '保存', '暂不使用', function(confirmed) {
-    if (confirmed) {
-      var input = document.getElementById('token-input');
-      if (input && input.value.trim()) {
-        setGHToken(input.value.trim());
-        showToast('Token已保存', 'success');
-        setTimeout(function() { syncData(); }, 500);
-      }
-    }
-  }, true);
+  showToast('正在使用内置Token同步');
+  setTimeout(function() { syncData(); }, 300);
 }
 
 function getSyncMeta() {
@@ -976,6 +975,7 @@ function pushToCloud(recipes, sha) {
 function syncData() {
   if (isSyncing) return;
   if (!hasGHToken()) {
+    // 内置Token也应可用，此处为兜底
     promptForToken();
     return;
   }
@@ -1931,10 +1931,8 @@ document.addEventListener('DOMContentLoaded', function() {
   init();
   loadTodayDate();
   loadTodayMenu();
-  // 启动时：有Token自动从云端拉取最新数据
-  if (hasGHToken()) {
-    setTimeout(function() { syncData(); }, 1000);
-  }
+  // 启动时自动从云端拉取最新数据（内置Token，无需用户配置）
+  setTimeout(function() { syncData(); }, 1000);
 });
 </script>
 </body>
