@@ -904,7 +904,10 @@ function hasGHToken() {
 
 // 弹出输入Token的对话框
 function promptForToken() {
-  showModal('云端同步设置', '请输入GitHub Token来开启同步功能（Token仅存储在本机，不会上传到其他地方）。<br><br>获取方式：访问 github.com/settings/tokens/new，勾选repo权限，生成后复制。<br><input type="text" id="token-input" placeholder="ghp_..." style="width:100%;margin-top:8px;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px" onkeydown="event.stopPropagation()">', '保存', '暂不使用', function(confirmed) {
+  var html = '<div style="line-height:1.8;font-size:14px">请输入GitHub Token来开启云端同步功能。<br>Token仅存储在本机，不会上传到其他地方。</div>'
+    + '<div style="margin-top:10px;font-size:12px;color:#999;line-height:1.6">获取方式：浏览器打开 github.com/settings/tokens/new<br>勾选 repo 权限，生成后复制</div>'
+    + '<input type="text" id="token-input" placeholder="ghp_..." style="width:100%;margin-top:10px;padding:8px 10px;border:1.5px solid #ddd;border-radius:8px;font-size:14px;box-sizing:border-box" onkeydown="event.stopPropagation()">';
+  showModal('云端同步设置', html, '保存', '暂不使用', function(confirmed) {
     if (confirmed) {
       var input = document.getElementById('token-input');
       if (input && input.value.trim()) {
@@ -913,7 +916,7 @@ function promptForToken() {
         setTimeout(function() { syncData(); }, 500);
       }
     }
-  });
+  }, true);
 }
 
 function getSyncMeta() {
@@ -1113,9 +1116,14 @@ function showToast(title, icon) {
 }
 
 var modalCallback = null;
-function showModal(title, content, confirmText, cancelText, callback) {
+function showModal(title, content, confirmText, cancelText, callback, isHtml) {
   document.getElementById('modal-title').textContent = title;
-  document.getElementById('modal-content').textContent = content;
+  var contentEl = document.getElementById('modal-content');
+  if (isHtml) {
+    contentEl.innerHTML = content;
+  } else {
+    contentEl.textContent = content;
+  }
   document.getElementById('modal-confirm').textContent = confirmText || '确定';
   var cancelBtn = document.getElementById('modal-cancel');
   if (cancelText) {
