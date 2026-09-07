@@ -1,7 +1,7 @@
 // sw.js — Service Worker for 家庭菜单手账 PWA
 // 缓策略：缓存优先（cache-first），离线时直接从缓存读取
 
-var CACHE_NAME = 'family-menu-v1';
+var CACHE_NAME = 'family-menu-v2';
 var CACHE_FILES = [
   './family-menu.html',
   './sw.js'
