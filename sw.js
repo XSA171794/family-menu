@@ -1,7 +1,7 @@
 // sw.js — Service Worker for 家庭菜单手账 PWA
 // 缓策略：网络优先（network-first），确保在线时总是拿到最新版本
 
-var CACHE_NAME = 'family-menu-v4';
+var CACHE_NAME = 'family-menu-v5';
 var CACHE_FILES = [
   './family-menu.html',
   './sw.js'
