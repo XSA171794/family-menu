@@ -1502,10 +1502,41 @@ function handleFileSelect(event) {
   reader.onload = function(e) {
     var dataUrl = e.target.result;
     var sizeKB = Math.round(dataUrl.length * 0.75 / 1024);
-    if (sizeKB > 500) { showToast('图片太大，请选小一点的'); return; }
-    editForm.image = dataUrl;
-    renderLocalImagePreview();
-    showToast('图片已选择', 'success');
+    if (sizeKB <= 500) {
+      // 小图直接用
+      editForm.image = dataUrl;
+      renderLocalImagePreview();
+      showToast('图片已选择', 'success');
+      return;
+    }
+    // 大图自动压缩
+    var img = new Image();
+    img.onload = function() {
+      var canvas = document.createElement('canvas');
+      var maxW = 800, maxH = 800;
+      var w = img.width, h = img.height;
+      if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+      if (h > maxH) { w = Math.round(w * maxH / h); h = maxH; }
+      canvas.width = w;
+      canvas.height = h;
+      var ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      // 逐步降低质量直到小于500KB
+      var quality = 0.8;
+      var compressed = canvas.toDataURL('image/jpeg', quality);
+      while (compressed.length * 0.75 / 1024 > 500 && quality > 0.1) {
+        quality -= 0.1;
+        compressed = canvas.toDataURL('image/jpeg', quality);
+      }
+      editForm.image = compressed;
+      renderLocalImagePreview();
+      var finalKB = Math.round(compressed.length * 0.75 / 1024);
+      showToast('图片已自动压缩(' + finalKB + 'KB)', 'success');
+    };
+    img.onerror = function() {
+      showToast('图片加载失败，请换一张试试');
+    };
+    img.src = dataUrl;
   };
   reader.readAsDataURL(file);
   event.target.value = '';
