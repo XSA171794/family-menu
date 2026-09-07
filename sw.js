@@ -1,26 +1,25 @@
 // sw.js — Service Worker for 家庭菜单手账 PWA
-// 缓策略：缓存优先（cache-first），离线时直接从缓存读取
+// 缓策略：网络优先（network-first），确保在线时总是拿到最新版本
 
-var CACHE_NAME = 'family-menu-v2';
+var CACHE_NAME = 'family-menu-v3';
 var CACHE_FILES = [
   './family-menu.html',
   './sw.js'
 ];
 
-// 安装时缓存核心文件
+// 安装时预缓存核心文件
 self.addEventListener('install', function(event) {
   event.waitUntil(
     caches.open(CACHE_NAME).then(function(cache) {
       return cache.addAll(CACHE_FILES).catch(function(err) {
-        // 即使缓存失败也继续，不阻塞安装
-        console.log('缓存文件失败:', err);
+        console.log('预缓存失败:', err);
       });
     })
   );
   self.skipWaiting();
 });
 
-// 激活时清理旧缓存
+// 激活时清理所有旧缓存
 self.addEventListener('activate', function(event) {
   event.waitUntil(
     caches.keys().then(function(names) {
@@ -36,36 +35,25 @@ self.addEventListener('activate', function(event) {
   self.clients.claim();
 });
 
-// 请求拦截：缓存优先，回退网络
+// 请求拦截：网络优先，离线回退缓存
 self.addEventListener('fetch', function(event) {
-  // 只处理GET请求
   if (event.request.method !== 'GET') return;
 
   event.respondWith(
-    caches.match(event.request).then(function(cached) {
-      if (cached) {
-        // 有缓存就用缓存，同时后台更新
-        fetch(event.request).then(function(response) {
-          if (response && response.status === 200) {
-            caches.open(CACHE_NAME).then(function(cache) {
-              cache.put(event.request, response.clone());
-            });
-          }
-        }).catch(function() {});
-        return cached;
+    fetch(event.request).then(function(response) {
+      // 网络成功，缓存一份再返回
+      if (response && response.status === 200 && response.type === 'basic') {
+        var responseClone = response.clone();
+        caches.open(CACHE_NAME).then(function(cache) {
+          cache.put(event.request, responseClone);
+        });
       }
-      // 没缓存就走网络
-      return fetch(event.request).then(function(response) {
-        // 成功的响应缓存起来
-        if (response && response.status === 200 && response.type === 'basic') {
-          var responseClone = response.clone();
-          caches.open(CACHE_NAME).then(function(cache) {
-            cache.put(event.request, responseClone);
-          });
-        }
-        return response;
-      }).catch(function() {
-        // 离线且无缓存，返回主页
+      return response;
+    }).catch(function() {
+      // 网络失败，从缓存读取
+      return caches.match(event.request).then(function(cached) {
+        if (cached) return cached;
+        // 最终回退到主页
         return caches.match('./family-menu.html');
       });
     })
