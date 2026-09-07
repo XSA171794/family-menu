@@ -1613,10 +1613,27 @@ function initPWA() {
   manifestLink.rel = 'manifest';
   manifestLink.href = URL.createObjectURL(manifestBlob);
   document.head.appendChild(manifestLink);
-  // 注册Service Worker（离线缓存）
+  // 注册Service Worker（离线缓存），带版本号确保更新
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(function(err) {
+    navigator.serviceWorker.register('sw.js?v=3').then(function(reg) {
+      // 检测到新SW立即激活
+      reg.addEventListener('updatefound', function() {
+        var newWorker = reg.installing;
+        if (newWorker) {
+          newWorker.addEventListener('statechange', function() {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              // 新版本已下载，通知页面刷新
+              newWorker.postMessage('skipWaiting');
+            }
+          });
+        }
+      });
+    }).catch(function(err) {
       console.log('SW注册失败（不影响使用）:', err);
+    });
+    // 监听SW控制权变更，自动刷新
+    navigator.serviceWorker.addEventListener('controllerchange', function() {
+      location.reload();
     });
   }
 }
