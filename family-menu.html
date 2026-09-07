@@ -1868,7 +1868,7 @@ function initPWA() {
   document.head.appendChild(manifestLink);
   // 注册Service Worker（离线缓存），带版本号确保更新
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js?v=3').then(function(reg) {
+    navigator.serviceWorker.register('sw.js?v=4').then(function(reg) {
       // 检测到新SW立即激活
       reg.addEventListener('updatefound', function() {
         var newWorker = reg.installing;
