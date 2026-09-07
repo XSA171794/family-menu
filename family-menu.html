@@ -796,7 +796,7 @@ function getRecipeById(id) {
   }
   return null;
 }
-function addRecipe(recipe) {
+function addRecipeData(recipe) {
   var list = getAllRecipes();
   recipe.id = 'r' + Date.now();
   recipe.isPreset = false;
@@ -1536,7 +1536,7 @@ function saveRecipe() {
     }
     showToast('保存成功！', 'success');
   } else {
-    var added = addRecipe(recipeData);
+    var added = addRecipeData(recipeData);
     if (!added) {
       showModal('添加失败', '本地存储空间已满，请删除一些菜品或减少大图片后重试。', '知道了', '', function(){});
       return;
